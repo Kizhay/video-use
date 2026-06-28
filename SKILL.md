@@ -59,7 +59,7 @@ The skill lives in `video-use/`. User footage lives wherever they put it. All se
 
 First-time install lives in `install.md` (clone, deps, ffmpeg, skill registration, API key). Don't re-run it every session; on cold start just verify:
 
-- `ELEVENLABS_API_KEY` resolves — either in the environment or in `.env` at the video-use repo root. If missing, ask the user to paste one and write it to `.env` (never to the user's `<videos_dir>`).
+- **Transcription engine (LOCAL INSTALL):** this install defaults to **local faster-whisper** — free, offline, **no API key needed**. Do NOT ask the user for an ElevenLabs key. `transcribe.py` / `transcribe_batch.py` use Whisper unless `--engine scribe` or `VIDEO_USE_ENGINE=scribe` is set. Model weights download once on first run (cached under `~/.cache/huggingface`). Default model `small`; pass `--whisper-model medium` for crisper text (slower). For Russian clips pass `--language ru`. Scribe is only used if a key exists AND the engine is explicitly set to scribe.
 - `ffmpeg` + `ffprobe` on PATH.
 - Python deps installed (`uv sync` or `pip install -e .` inside the repo).
 - Node.js + npm available if the session needs HyperFrames or Remotion slots. HyperFrames currently requires Node.js 22+.
@@ -71,8 +71,8 @@ Helpers (`helpers/transcribe.py`, `helpers/render.py`, etc.) live alongside this
 
 ## Helpers
 
-- **`transcribe.py <video>`** — single-file Scribe call. `--num-speakers N` optional. Cached.
-- **`transcribe_batch.py <videos_dir>`** — 4-worker parallel transcription. Use for multi-take.
+- **`transcribe.py <video>`** — single-file transcription. Local Whisper by default (`--engine`, `--whisper-model`, `--language`); Scribe with `--engine scribe` (`--num-speakers N`). Cached.
+- **`transcribe_batch.py <videos_dir>`** — batch transcription. Whisper runs serial (CPU-bound); Scribe uses `--workers` parallelism. Use for multi-take.
 - **`pack_transcripts.py --edit-dir <dir>`** — `transcripts/*.json` → `takes_packed.md` (phrase-level, break on silence ≥ 0.5s).
 - **`timeline_view.py <video> <start> <end>`** — filmstrip + waveform PNG. On-demand visual drill-down. **Not a scan tool** — use it at decision points, not constantly.
 - **`render.py <edl.json> -o <out>`** — per-segment extract → concat → overlays (PTS-shifted) → subtitles LAST. `--preview` for 720p fast. `--build-subtitles` to generate master.srt inline.
@@ -309,8 +309,8 @@ Things that consistently fail regardless of style:
 
 - **Hierarchical pre-computed codec formats** with USABILITY / tone tags / shot layers. Over-engineering. Derive from the transcript at decision time.
 - **Hand-tuned moment-scoring functions.** The LLM picks better than any heuristic you'll write.
-- **Whisper SRT / phrase-level output.** Loses sub-second gap data. Always word-level verbatim.
-- **Running Whisper locally on CPU.** Slow and it normalizes fillers. Use hosted Scribe.
+- **Whisper SRT / phrase-level output.** Loses sub-second gap data. Always word-level verbatim — `transcribe.py` already requests word timestamps from Whisper, so use it; don't shell out to a raw `whisper` CLI.
+- **(This install runs Whisper locally on CPU by design — free, no key.)** Trade-off vs hosted Scribe: a bit slower (~0.5× realtime on `small`) and filler/diarization handling is weaker. Acceptable for solo talking-head edits. If filler-cutting accuracy matters, bump `--whisper-model medium`/`large-v3`, or set up a Scribe key and `--engine scribe`.
 - **Burning subtitles into base before compositing overlays.** Overlays hide them. (Hard Rule 1.)
 - **Single-pass filtergraph when you have overlays.** Double re-encodes. Use per-segment extract → concat.
 - **Linear animation easing.** Looks robotic. Always cubic.

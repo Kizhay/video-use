@@ -20,7 +20,12 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
-from transcribe import load_api_key, transcribe_one
+from transcribe import (
+    DEFAULT_WHISPER_MODEL,
+    load_api_key,
+    resolve_engine,
+    transcribe_one,
+)
 
 
 VIDEO_EXTS = {".mp4", ".MP4", ".mov", ".MOV", ".mkv", ".MKV", ".avi", ".AVI", ".m4v"}
@@ -44,6 +49,20 @@ def main() -> None:
         help="Edit output directory (default: <videos_dir>/edit)",
     )
     ap.add_argument("--workers", type=int, default=4, help="Parallel workers (default: 4)")
+    ap.add_argument(
+        "--engine",
+        type=str,
+        default=None,
+        choices=["whisper", "scribe"],
+        help="Transcription engine. Default: whisper (local, free). "
+             "Override globally with VIDEO_USE_ENGINE.",
+    )
+    ap.add_argument(
+        "--whisper-model",
+        type=str,
+        default=DEFAULT_WHISPER_MODEL,
+        help=f"faster-whisper model size. Default: {DEFAULT_WHISPER_MODEL}.",
+    )
     ap.add_argument(
         "--language",
         type=str,
@@ -77,13 +96,20 @@ def main() -> None:
         print("nothing to do")
         return
 
-    api_key = load_api_key()
+    engine = resolve_engine(args.engine)
+    api_key = load_api_key() if engine == "scribe" else None
 
-    print(f"transcribing {len(pending)} files with {args.workers} parallel workers")
+    # Local Whisper saturates the CPU on a single file; running several models
+    # in parallel just thrashes and balloons memory. Force serial for whisper.
+    workers = args.workers if engine == "scribe" else 1
+    if engine == "whisper" and args.workers != 1:
+        print("  (whisper runs locally → serial, ignoring --workers)")
+
+    print(f"transcribing {len(pending)} files via {engine} with {workers} worker(s)")
     t0 = time.time()
 
     errors: list[tuple[Path, str]] = []
-    with ThreadPoolExecutor(max_workers=args.workers) as pool:
+    with ThreadPoolExecutor(max_workers=workers) as pool:
         futures = {
             pool.submit(
                 transcribe_one,
@@ -92,6 +118,8 @@ def main() -> None:
                 api_key=api_key,
                 language=args.language,
                 num_speakers=args.num_speakers,
+                engine=engine,
+                whisper_model=args.whisper_model,
                 verbose=False,
             ): v
             for v in pending

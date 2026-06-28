@@ -157,6 +157,7 @@ def extract_segment(
     out_path: Path,
     preview: bool = False,
     draft: bool = False,
+    keep_resolution: bool = False,
 ) -> None:
     """Extract a cut range as its own MP4 with grade + 30ms audio fades baked in.
 
@@ -167,6 +168,7 @@ def extract_segment(
       - final (default): 1080p libx264 fast CRF 20
       - preview:         1080p libx264 medium CRF 22 (evaluable for QC)
       - draft:           720p libx264 ultrafast CRF 28 (cut-point check only)
+      - keep_resolution: source resolution + fps preserved, CRF 16 (HQ master)
     """
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -179,7 +181,8 @@ def extract_segment(
     vf_parts: list[str] = []
     if is_hdr_source(source):
         vf_parts.append(TONEMAP_CHAIN)
-    vf_parts.append(scale)
+    if not keep_resolution:            # HQ master keeps the source resolution
+        vf_parts.append(scale)
     if grade_filter:
         vf_parts.append(grade_filter)
     vf = ",".join(vf_parts)
@@ -192,6 +195,8 @@ def extract_segment(
         preset, crf = "ultrafast", "28"
     elif preview:
         preset, crf = "medium", "22"
+    elif keep_resolution:
+        preset, crf = "slow", "16"
     else:
         preset, crf = "fast", "20"
 
@@ -203,7 +208,11 @@ def extract_segment(
         "-vf", vf,
         "-af", af,
         "-c:v", "libx264", "-preset", preset, "-crf", crf,
-        "-pix_fmt", "yuv420p", "-r", "24",
+        "-pix_fmt", "yuv420p",
+    ]
+    if not keep_resolution:            # keep_resolution preserves source fps
+        cmd += ["-r", "24"]
+    cmd += [
         "-c:a", "aac", "-b:a", "192k", "-ar", "48000",
         "-movflags", "+faststart",
         str(out_path),
@@ -216,6 +225,7 @@ def extract_all_segments(
     edit_dir: Path,
     preview: bool,
     draft: bool = False,
+    keep_resolution: bool = False,
 ) -> list[Path]:
     """Extract every EDL range into edit_dir/clips_graded/seg_NN.mp4.
     Returns the ordered list of segment paths.
@@ -255,7 +265,8 @@ def extract_all_segments(
         print(f"  [{i:02d}] {src_name}  {start:7.2f}-{end:7.2f}  ({duration:5.2f}s)  {note}")
         if is_auto:
             print(f"        grade: {seg_filter or '(none)'}")
-        extract_segment(src_path, start, duration, seg_filter, out_path, preview=preview, draft=draft)
+        extract_segment(src_path, start, duration, seg_filter, out_path,
+                        preview=preview, draft=draft, keep_resolution=keep_resolution)
         seg_paths.append(out_path)
 
     return seg_paths
@@ -601,6 +612,12 @@ def main() -> None:
         action="store_true",
         help="Skip audio loudness normalization. Default is on (-14 LUFS, -1 dBTP, LRA 11).",
     )
+    ap.add_argument(
+        "--keep-resolution",
+        action="store_true",
+        help="HQ master: preserve source resolution + fps (e.g. 4K→4K), CRF 16. "
+             "No downscale to 1080p. Use for same-quality-in-same-quality-out.",
+    )
     args = ap.parse_args()
 
     edl_path = args.edl.resolve()
@@ -613,7 +630,8 @@ def main() -> None:
 
     # 1. Extract per-segment (auto-grade per range if EDL grade is "auto")
     segment_paths = extract_all_segments(
-        edl, edit_dir, preview=args.preview, draft=args.draft
+        edl, edit_dir, preview=args.preview, draft=args.draft,
+        keep_resolution=args.keep_resolution,
     )
 
     # 2. Concat → base
