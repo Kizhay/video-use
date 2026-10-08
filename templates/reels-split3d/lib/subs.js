@@ -10,6 +10,8 @@ export function buildSubs(root, words, o = {}) {
     active: o.active ?? '#FFE14D', base: o.base ?? '#FFFFFF', stroke: o.stroke ?? 15,
     hideBefore: o.hideBefore ?? -1, hideAfter: o.hideAfter ?? 1e9, maxWidth: o.maxWidth ?? 960,
     lift: o.lift ?? true,
+    style: o.style ?? 'hormozi',            // hormozi | pill | clean
+    pill: o.pill ?? '#005BFF', pillText: o.pillText ?? '#FFFFFF',
   };
   const ws = words.map((x) => ({ ...x, d: clean(x.w).toUpperCase() })).filter((x) => x.d.length);
   const groups = []; let cur = [];
@@ -55,6 +57,10 @@ export function drawSubs(st, t) {
       Object.assign(sp.style, { display: 'inline-block', margin: '0 20px', WebkitTextStroke: `${cfg.stroke}px #000`,
         paintOrder: 'stroke fill', textShadow: '0 9px 0 rgba(0,0,0,.55), 0 0 28px rgba(0,0,0,.5)',
         transformOrigin: '50% 70%' });
+      if (cfg.style === 'pill') Object.assign(sp.style, { WebkitTextStroke: `${Math.round(cfg.stroke * 0.6)}px #000`, margin: '4px 6px',
+        padding: '2px 18px 8px', borderRadius: '20px', textShadow: '0 6px 0 rgba(0,0,0,.45)' });
+      if (cfg.style === 'clean') Object.assign(sp.style, { WebkitTextStroke: '0', margin: '0 14px',
+        textShadow: '0 4px 18px rgba(0,0,0,.75), 0 2px 4px rgba(0,0,0,.9)' });
       box.appendChild(sp); return sp;
     });
     st.shown = gi;
@@ -72,6 +78,12 @@ export function drawSubs(st, t) {
     let color = cfg.base;
     if (x.c && spoken) color = x.c; else if (isActive) color = cfg.active;
     sp.style.color = color;
+    if (cfg.style === 'pill') {
+      sp.style.background = isActive ? (x.c || cfg.pill) : 'transparent';
+      sp.style.color = isActive ? cfg.pillText : (x.c && spoken ? x.c : cfg.base);
+      sp.style.boxShadow = isActive ? '0 10px 30px rgba(0,0,0,.35)' : 'none';
+      sp.style.WebkitTextStroke = isActive ? '0' : `${Math.round(cfg.stroke * 0.6)}px #000`;
+    }
     sp.style.opacity = spoken ? 1 : 0.92;
     sp.style.transform = `scale(${sc}) translateY(${isActive && cfg.lift ? -4 : 0}px) rotate(${isActive ? (i % 2 ? 1.5 : -1.5) : 0}deg)`;
   });

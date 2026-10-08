@@ -1,6 +1,7 @@
 // Движок кадров: RM.setup() → RM.frame(t). Каждый кадр — чистая функция времени,
 // поэтому кадры можно рендерить в любом порядке и в несколько потоков.
 import * as THREE from 'three';
+import { gsap } from 'gsap';
 import * as kit from './kit.js';
 import { buildSubs, drawSubs } from './subs.js';
 import { buildHeadline, drawHeadline } from './headline.js';
@@ -20,6 +21,8 @@ function drawBackground(t, accent) {
   const g = bgCtx, W = TOP_W, H = TOP_H;
   g.clearRect(0, 0, W, H);
   if (P.background === 'none') return;
+  if (P.background === 'light') { drawLight(g, W, H, t, accent); return; }
+  if (P.background === 'flat') { g.fillStyle = active.bgColor || P.bgColor || '#0B1020'; g.fillRect(0, 0, W, H); return; }
   const base = g.createLinearGradient(0, 0, 0, H);
   base.addColorStop(0, '#050816'); base.addColorStop(1, '#0B1330');
   g.fillStyle = base; g.fillRect(0, 0, W, H);
@@ -51,6 +54,19 @@ function drawBackground(t, accent) {
   g.fillStyle = vg; g.fillRect(0, 0, W, H);
 }
 
+function drawLight(g, W, H, t, accent) {
+  g.fillStyle = '#F3F5FA'; g.fillRect(0, 0, W, H);
+  const [r, gg, b] = hexToRgb(accent);
+  [[0.15, 0.2, 520, 0.16], [0.9, 0.75, 560, 0.12]].forEach(([x, y, rad, a], i) => {
+    const cx = W * x + Math.sin(t * 0.3 + i * 2) * 50, cy = H * y + Math.cos(t * 0.25 + i) * 40;
+    const rg = g.createRadialGradient(cx, cy, 0, cx, cy, rad);
+    rg.addColorStop(0, `rgba(${r},${gg},${b},${a})`); rg.addColorStop(1, `rgba(${r},${gg},${b},0)`);
+    g.fillStyle = rg; g.fillRect(0, 0, W, H);
+  });
+  g.fillStyle = 'rgba(20,30,60,0.10)';
+  for (let y = 24; y < H; y += 40) for (let x = 20; x < W; x += 40) { g.beginPath(); g.arc(x, y, 2.2, 0, 6.283); g.fill(); }
+}
+
 function newScene() {
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(35, TOP_W / TOP_H, 0.1, 200);
@@ -73,10 +89,10 @@ function activate(idx) {
   $('ui').innerHTML = ''; $('fx').innerHTML = '';
   const def = P.scenes[idx];
   const { scene, camera } = newScene();
-  const ctx = { THREE, kit, scene, camera, renderer, ui: $('ui'), fx: $('fx'), W: TOP_W, H: TOP_H,
+  const ctx = { THREE, gsap, kit, scene, camera, renderer, ui: $('ui'), fx: $('fx'), W: TOP_W, H: TOP_H,
     dur: def.end - def.start, start: def.start, words: P._words, params: def.params || {} };
   const inst = modules[idx].default(ctx) || {};
-  active = { idx, inst, scene, camera, accent: inst.accent || def.accent || P.accent || '#005BFF' };
+  active = { idx, inst, scene, camera, accent: inst.accent || def.accent || P.accent || '#005BFF', bgColor: def.bgColor };
 }
 
 async function setup() {
@@ -104,6 +120,9 @@ async function setup() {
   chrome.flash = kit.el($('chrome'), '', { left: '0', top: '0', width: '1080px', height: TOP_H + 'px', background: '#fff', opacity: '0' });
   if (P.progressBar === false) chrome.bar.style.display = 'none';
   if (P.seam === false) chrome.seam.style.display = 'none';
+  if (P.seamColor) chrome.seam.style.background = P.seamColor;
+  if (P.barColor) chrome.bar.style.background = P.barColor;
+  gsap.ticker.lagSmoothing(0); gsap.ticker.sleep();   // время задаём сами, покадрово
 
   subsState = buildSubs($('subs'), P._words, P.subs || {});
   headState = buildHeadline($('headline'), P.headline);
@@ -117,10 +136,11 @@ async function frame(t) {
   const def = P.scenes[idx], lt = t - def.start, p = lt / (def.end - def.start);
 
   drawBackground(t, active.accent);
+  if (active.inst.tl) active.inst.tl.seek(Math.max(0, lt), false);   // GSAP-таймлайн сцены (paused)
   active.inst.update?.(lt, p, t);
 
   // вход сцены: короткий наезд + вспышка (отключается transition:'none')
-  const tr = def.transition ?? (idx === 0 ? 'none' : 'punch');
+  const tr = def.transition ?? (idx === 0 ? 'none' : (P.transition ?? 'punch'));
   let s = 1, flash = 0;
   if (tr === 'punch' && lt < 0.3) { const k = kit.easeOutCubic(lt / 0.3); s = 1.14 - 0.14 * k; flash = 0.35 * (1 - k); }
   const tf = `scale(${s})`;
@@ -136,4 +156,5 @@ async function frame(t) {
 }
 
 window.RM = { setup, frame };
+window.gsap = gsap;
 window.RM_READY = true;
