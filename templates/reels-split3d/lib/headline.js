@@ -6,20 +6,21 @@ export function buildHeadline(root, h) {
   if (!h) return null;
   const wrap = document.createElement('div');
   Object.assign(wrap.style, { position: 'absolute', left: '50%', top: (h.y ?? 960) + 'px', width: '1000px',
-    transform: 'translate(-50%,-50%)', textAlign: 'center', fontFamily: 'MB', fontWeight: '900' });
+    transform: 'translate(-50%,-50%)', textAlign: 'center', fontFamily: h.font || 'MB', fontWeight: String(h.weight || 900) });
   root.appendChild(wrap);
   const scrim = document.createElement('div');
   Object.assign(scrim.style, { position: 'absolute', left: '0', top: '0', width: '1080px', height: '1920px',
-    background: 'radial-gradient(ellipse at 50% ' + (h.y ?? 960) + 'px, rgba(0,0,0,.72) 0%, rgba(0,0,0,.45) 45%, rgba(0,0,0,0) 75%)' });
+    background: h.scrim === false ? 'none' : 'radial-gradient(ellipse at 50% ' + (h.y ?? 960) + 'px, rgba(0,0,0,.6) 0%, rgba(0,0,0,.3) 40%, rgba(0,0,0,0) 70%)' });
   root.insertBefore(scrim, wrap);
   const lines = h.lines.map((L) => {
     const d = document.createElement('div');
     d.innerHTML = L.text;
     Object.assign(d.style, { display: 'inline-block', fontSize: (L.size ?? 104) + 'px', lineHeight: '1.02',
       color: L.color ?? '#fff', background: L.bg ?? 'transparent', padding: L.bg ? '8px 30px 14px' : '0',
-      borderRadius: '22px', margin: '10px 0', textTransform: 'uppercase', letterSpacing: '1px',
-      WebkitTextStroke: L.bg ? '0' : '14px #000', paintOrder: 'stroke fill',
-      textShadow: L.bg ? 'none' : '0 10px 0 rgba(0,0,0,.6)',
+      borderRadius: '22px', margin: (h.gap ?? 10) + 'px 0', textTransform: h.upper === false ? 'none' : 'uppercase',
+      letterSpacing: (h.ls ?? 1) + 'px', fontFamily: L.font || 'inherit',
+      WebkitTextStroke: L.bg || h.stroke === 0 ? '0' : `${h.stroke ?? 14}px #000`, paintOrder: 'stroke fill',
+      textShadow: L.bg ? 'none' : (h.shadow || '0 10px 0 rgba(0,0,0,.6)'),
       boxShadow: L.bg ? '0 18px 50px rgba(0,0,0,.55)' : 'none', transformOrigin: '50% 50%' });
     const row = document.createElement('div'); row.appendChild(d); wrap.appendChild(row);
     return { d, L };

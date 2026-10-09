@@ -13,9 +13,10 @@ export function buildSubs(root, words, o = {}) {
     lift: o.lift ?? true,
     style: o.style ?? 'hormozi',            // hormozi | pill | clean
     pill: o.pill ?? '#005BFF', pillText: o.pillText ?? '#FFFFFF',
-    font: o.font ?? 'MB', weight: o.weight ?? 900, upper: o.upper ?? (o.style !== 'minimal'),
+    font: o.font ?? 'MB', weight: o.weight ?? 900, upper: o.upper ?? !['minimal', 'marker'].includes(o.style),
     dim: o.dim ?? 0.55, lineHeight: o.lineHeight ?? 1.08,
-    box: o.box ?? null,                        // подложка строки, напр. 'rgba(12,14,20,.55)'
+    box: o.box ?? null,
+    hideRanges: o.hideRanges ?? [],            // [[a,b],...] — где субтитры не показываем (полноэкранные вставки)                        // подложка строки, напр. 'rgba(12,14,20,.55)'
   };
   const ws = words.map((x) => ({ ...x, d: cfg.upper ? clean(x.w).toUpperCase() : sentence(x.w) })).filter((x) => x.d.length);
   const groups = []; let cur = [];
@@ -56,7 +57,7 @@ export function buildSubs(root, words, o = {}) {
 
 export function drawSubs(st, t) {
   const { cfg, groups, box } = st;
-  if (t < cfg.hideBefore || t > cfg.hideAfter) { box.style.display = 'none'; return; }
+  if (t < cfg.hideBefore || t > cfg.hideAfter || cfg.hideRanges.some(([a, b]) => t >= a && t < b)) { box.style.display = 'none'; return; }
   const gi = groups.findIndex((g) => t >= g.start && t < g.end);
   if (gi < 0) { box.style.display = 'none'; return; }
   box.style.display = 'block';
@@ -72,6 +73,8 @@ export function drawSubs(st, t) {
         transformOrigin: '50% 70%' });
       if (cfg.style === 'pill') Object.assign(sp.style, { WebkitTextStroke: `${Math.round(cfg.stroke * 0.6)}px #000`, margin: '4px 6px',
         padding: '2px 18px 8px', borderRadius: '20px', textShadow: '0 6px 0 rgba(0,0,0,.45)' });
+      if (cfg.style === 'marker') Object.assign(sp.style, { WebkitTextStroke: '0', margin: '2px 4px', padding: '0 12px 5px',
+        borderRadius: '10px', textShadow: '0 2px 14px rgba(0,0,0,.6), 0 1px 3px rgba(0,0,0,.55)' });
       if (cfg.style === 'minimal') Object.assign(sp.style, { WebkitTextStroke: '0', margin: '0 7px',
         textShadow: cfg.box ? 'none' : '0 2px 10px rgba(0,0,0,.55), 0 1px 2px rgba(0,0,0,.6)' });
       if (cfg.style === 'clean') Object.assign(sp.style, { WebkitTextStroke: '0', margin: '0 14px',
@@ -79,6 +82,22 @@ export function drawSubs(st, t) {
       tgt.appendChild(sp); return sp;
     });
     st.shown = gi;
+  }
+  if (cfg.style === 'marker') {
+    const k = easeOutCubic(clamp01((t - g.start) / 0.16));
+    box.style.opacity = k; box.style.transform = `translate(-50%,-50%) translateY(${(1 - k) * 12}px)`;
+    g.forEach((x, i) => {
+      const sp = st.spans[i];
+      const active = t >= x.s - 0.05 && (i === g.length - 1 ? t < x.e + 0.25 : t < g[i + 1].s - 0.05);
+      const m = active ? easeOutCubic(clamp01((t - x.s + 0.05) / 0.14)) : 0;   // маркер проводится слева направо
+      sp.style.background = m > 0 ? `linear-gradient(${cfg.pill},${cfg.pill}) 0 0 / ${m * 100}% 100% no-repeat` : 'none';
+      const dark = m > 0.45;
+      sp.style.color = dark ? '#111' : cfg.base;
+      sp.style.textShadow = dark ? 'none' : '0 2px 14px rgba(0,0,0,.6), 0 1px 3px rgba(0,0,0,.55)';
+      sp.style.transform = active ? `rotate(-2deg) scale(${1 + 0.04 * m})` : 'none';
+      sp.style.opacity = 1;
+    });
+    return;
   }
   if (cfg.style === 'minimal') {
     const k = easeOutCubic(clamp01((t - g.start) / 0.18));

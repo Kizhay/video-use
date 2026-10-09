@@ -6,7 +6,7 @@ import * as kit from './kit.js';
 import { buildSubs, drawSubs } from './subs.js';
 import { buildHeadline, drawHeadline } from './headline.js';
 
-const TOP_W = 1080, TOP_H = 960;
+let TOP_W = 1080, TOP_H = 960;   // layout:'full' → 1080×1920 (анимация на весь кадр)
 const $ = (id) => document.getElementById(id);
 
 let P = null;            // project.json
@@ -97,6 +97,11 @@ function activate(idx) {
 
 async function setup() {
   P = await (await fetch('/project/project.json')).json();
+  if (P.layout === 'full') {
+    TOP_H = 1920;
+    for (const id of ['top', 'gl']) { $(id).style.height = '1920px'; }
+    $('gl').height = 1920;
+  }
   P._words = P.words ? await (await fetch('/project/' + P.words)).json() : [];
   modules = await Promise.all(P.scenes.map((s) => import('/project/' + s.file)));
   for (const f of P.fonts || []) {
