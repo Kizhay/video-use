@@ -3,6 +3,7 @@
 import { easeOutBack, easeOutCubic, clamp01 } from './kit.js';
 
 const clean = (w) => w.replace(/[.,!:;…—–]+/g, '').replace(/^-/, '').trim();
+const sentence = (w) => w.replace(/[.,!:;…—–]+$/g, '').replace(/^[—–-]\s*/, '').trim();
 
 export function buildSubs(root, words, o = {}) {
   const cfg = {
@@ -12,8 +13,11 @@ export function buildSubs(root, words, o = {}) {
     lift: o.lift ?? true,
     style: o.style ?? 'hormozi',            // hormozi | pill | clean
     pill: o.pill ?? '#005BFF', pillText: o.pillText ?? '#FFFFFF',
+    font: o.font ?? 'MB', weight: o.weight ?? 900, upper: o.upper ?? (o.style !== 'minimal'),
+    dim: o.dim ?? 0.55, lineHeight: o.lineHeight ?? 1.08,
+    box: o.box ?? null,                        // подложка строки, напр. 'rgba(12,14,20,.55)'
   };
-  const ws = words.map((x) => ({ ...x, d: clean(x.w).toUpperCase() })).filter((x) => x.d.length);
+  const ws = words.map((x) => ({ ...x, d: cfg.upper ? clean(x.w).toUpperCase() : sentence(x.w) })).filter((x) => x.d.length);
   const groups = []; let cur = [];
   ws.forEach((x, i) => {
     const prev = cur[cur.length - 1];
@@ -36,8 +40,16 @@ export function buildSubs(root, words, o = {}) {
 
   const box = document.createElement('div');
   Object.assign(box.style, { position: 'absolute', left: '50%', top: cfg.y + 'px', width: cfg.maxWidth + 'px',
-    transform: 'translate(-50%,-50%)', textAlign: 'center', lineHeight: '1.08', fontWeight: '900',
-    fontSize: cfg.size + 'px', fontFamily: 'MB', letterSpacing: '1px' });
+    transform: 'translate(-50%,-50%)', textAlign: 'center', lineHeight: String(cfg.lineHeight), fontWeight: String(cfg.weight),
+    fontSize: cfg.size + 'px', fontFamily: cfg.font, letterSpacing: cfg.style === 'minimal' ? '-0.5px' : '1px' });
+  if (cfg.box) {
+    // подложка по ширине текста: внутренний inline-блок
+    const inner = document.createElement('div');
+    Object.assign(inner.style, { display: 'inline-block', background: cfg.box, padding: '14px 30px 18px',
+      borderRadius: '26px', backdropFilter: 'blur(14px)', WebkitBackdropFilter: 'blur(14px)',
+      boxShadow: '0 10px 40px rgba(0,0,0,.25)', maxWidth: cfg.maxWidth + 'px' });
+    box.appendChild(inner); box._target = inner;
+  }
   root.appendChild(box);
   return { cfg, groups, box, shown: -1, spans: [] };
 }
@@ -50,7 +62,8 @@ export function drawSubs(st, t) {
   box.style.display = 'block';
   const g = groups[gi];
   if (st.shown !== gi) {
-    box.innerHTML = '';
+    const tgt = box._target || box;
+    tgt.innerHTML = '';
     st.spans = g.map((x) => {
       const sp = document.createElement('span');
       sp.textContent = x.d;
@@ -59,11 +72,25 @@ export function drawSubs(st, t) {
         transformOrigin: '50% 70%' });
       if (cfg.style === 'pill') Object.assign(sp.style, { WebkitTextStroke: `${Math.round(cfg.stroke * 0.6)}px #000`, margin: '4px 6px',
         padding: '2px 18px 8px', borderRadius: '20px', textShadow: '0 6px 0 rgba(0,0,0,.45)' });
+      if (cfg.style === 'minimal') Object.assign(sp.style, { WebkitTextStroke: '0', margin: '0 7px',
+        textShadow: cfg.box ? 'none' : '0 2px 10px rgba(0,0,0,.55), 0 1px 2px rgba(0,0,0,.6)' });
       if (cfg.style === 'clean') Object.assign(sp.style, { WebkitTextStroke: '0', margin: '0 14px',
         textShadow: '0 4px 18px rgba(0,0,0,.75), 0 2px 4px rgba(0,0,0,.9)' });
-      box.appendChild(sp); return sp;
+      tgt.appendChild(sp); return sp;
     });
     st.shown = gi;
+  }
+  if (cfg.style === 'minimal') {
+    const k = easeOutCubic(clamp01((t - g.start) / 0.18));
+    box.style.opacity = k; box.style.transform = `translate(-50%,-50%) translateY(${(1 - k) * 10}px)`;
+    g.forEach((x, i) => {
+      const sp = st.spans[i], on = t >= x.s - 0.04;
+      const kk = clamp01((t - x.s + 0.04) / 0.12);
+      sp.style.color = x.c && on ? x.c : cfg.base;
+      sp.style.opacity = on ? cfg.dim + (1 - cfg.dim) * kk : cfg.dim;
+      sp.style.transform = 'none';
+    });
+    return;
   }
   // вход всей группы
   const kin = easeOutBack(clamp01((t - g.start) / 0.16), 2.2);

@@ -99,6 +99,10 @@ async function setup() {
   P = await (await fetch('/project/project.json')).json();
   P._words = P.words ? await (await fetch('/project/' + P.words)).json() : [];
   modules = await Promise.all(P.scenes.map((s) => import('/project/' + s.file)));
+  for (const f of P.fonts || []) {
+    const ff = new FontFace(f.family, `url('/project/${f.file}')`, { weight: f.weight || '100 900' });
+    document.fonts.add(await ff.load());
+  }
   await document.fonts.load('900 80px MB'); await document.fonts.load('800 80px MB'); await document.fonts.load('500 40px MB');
   await document.fonts.ready;
 
