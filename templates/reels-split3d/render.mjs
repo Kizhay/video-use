@@ -39,7 +39,11 @@ const browsers = [];
 async function openPage() {
   const browser = await puppeteer.launch({
     headless: true, protocolTimeout: 600000,
-    args: ['--ignore-gpu-blocklist', '--enable-webgl', '--use-angle=metal', '--enable-gpu-rasterization',
+    args: [...(process.platform === 'darwin'
+             ? ['--use-angle=metal']
+             : ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage',   // облако/Linux: root, без GPU
+                '--use-angle=swiftshader', '--use-gl=angle', '--enable-unsafe-swiftshader']),
+           '--ignore-gpu-blocklist', '--enable-webgl', '--enable-gpu-rasterization',
            '--hide-scrollbars', '--force-color-profile=srgb', '--font-render-hinting=none',
            '--disable-background-timer-throttling', '--disable-renderer-backgrounding',
            '--disable-backgrounding-occluded-windows'],
