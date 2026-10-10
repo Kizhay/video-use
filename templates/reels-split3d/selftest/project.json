@@ -1,0 +1,4 @@
+{"fps":30,"duration":10,"words":"words.json","background":"none","progressBar":false,"seam":false,
+ "headline":{"start":0,"end":3,"y":430,"lines":[{"text":"Самотест","size":120},{"text":"облака","size":120,"bg":"#005BFF","at":0.12}]},
+ "subs":{"style":"marker","pill":"#FFD60A","font":"MB","weight":800,"size":64,"y":1380,"hideBefore":2.9},
+ "layout":"full","scenes":[{"file":"scenes/s.js","start":0,"end":11,"transition":"none"}]}
