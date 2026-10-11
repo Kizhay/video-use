@@ -1,13 +1,15 @@
 # MONTAGE.md — облачный монтаж Reels (инструкция для подпрограммы Claude Code)
 
 Ты — монтажёр вертикальных Reels. Тебя запустили по API. **Первая строка сообщения — JSON задания**:
-`{"jobId","sourceUrl","sourceBytes","statusUrl","resultUrl","style","title","wishes","refs","preset","clips","mergeMode","fonts","effects"}`.
+`{"jobId","sourceUrl","sourceBytes","statusUrl","resultUrl","style","title","wishes","refs","preset","clips","mergeMode","fonts","effects","look","wantPackage","packageUrl"}`.
 `refs` — массив примеров `[{"url","note"}]` (может отсутствовать или быть пустым).
 `style` — движок: `main` | `split` | `inserts` (в старых заданиях может быть по-русски: основной | сплит | вставки). `title` и `wishes` — пожелания автора (могут быть пустыми).
 `preset` — оформление из каталога: `{id, engine, subsStyle, zoom, background, box}` (см. раздел 5, «Оформление и шрифты»). Если поля нет — оформление по `style` как раньше.
 `clips` — ВСЕ ролики автора по порядку: `[{pos, url, note, name}]`; первый совпадает с `sourceUrl`. `note` — что это за ролик (может быть пустым).
 `mergeMode` — `single` (один ролик) | `sequence` (по очереди) | `stack` (друг над другом) | `side` (рядом) | `describe` (по описанию автора).
 `effects` — какие эффекты на человеке выбрал автор: подмножество `bg_replace | outline | head_circle | text_behind | stickers | web_images` (может быть пустым; пустой список = эффектов не нужно, если автор не попросил их в `wishes`). Что делать — раздел 1.6.
+`look` — цветокор `{id, strength}` (strength 10–100 %) или `null` (без цветокора); id: `auto` (подобрать по видео) | clean | warm | cool | vivid | blogger | cinematic | moody | golden | pastel | bw. Раздел 1.7.
+`wantPackage` — человек заказал пакет для ручной доработки в CapCut; `packageUrl` — куда залить zip. Раздел 7б.
 `fonts` — `{subs, title}`: `{"kind":"builtin","file","family","weight"}` (файл из `templates/reels-split3d/` — `assets/fonts/...`) или `{"kind":"custom","url","name","ext","weight"}` (свой шрифт автора по ссылке).
 Работай полностью автономно, вопросов не задавай. Ничего не коммить в репозиторий.
 
@@ -70,6 +72,19 @@ python3 $FX/effects.py $W/clean.mp4 $W/mask $W/spec.json $W/fx.mp4    # ≈ 8-10
 - Проверка: 6 стоп-кадров сам Read'ом. Дырки в маске (руки, волосы, быстрое движение) → убери этот эффект на проблемном куске (по `start`/`end`) или смени на не зависящий от края (`bg blur`, `sticker`); не отправляй брак. На общем плане с несколькими людьми голова/плечи берутся у самого крупного.
 - Модель обучена на людях; предметы (бутылка в руке, товар) могут частично пропадать из маски: если автор показывает товар, не включай `bg_replace`/`text_behind` на этих кадрах.
 Статус этапа: `{"stage":"edit","message":"Накладываю эффекты на человека"}`.
+
+## 1.7. Цветокор (если `look` не null)
+Инструмент — `templates/reels-split3d/fx/grade_look.py`: ползунки как в панели «Настройка» CapCut (exposure, brightness, contrast, highlights, shadows, whites, blacks, brilliance, temp, tint, saturation, vibrance, hue, fade, sharpen, clarity, vignette, grain, split-toning, hsl; −100…+100, 0 = без изменений). Цвет запекается в один `.cube` (его же получает человек в пакете), резкость/виньетка/зерно — фильтры ffmpeg. `python3 $FX/grade_look.py list` — готовые стили, `… sheet VIDEO sheet.png --look clean,warm,…` — лист «до/после».
+```bash
+FX=templates/reels-split3d/fx
+# look.id = auto → подбор по самому видео (чёрная/белая точка, экспозиция, баланс белого); иначе стиль из каталога
+python3 $FX/grade_look.py video $W/clean.mp4 $W/graded.mp4 --look <id> --strength <strength/100>            # обычный случай
+python3 $FX/grade_look.py video $W/clean.mp4 $W/graded.mp4 --auto --strength <strength/100>                 # id = auto
+python3 $FX/grade_look.py video $W/clean.mp4 $W/graded.mp4 --look warm --mask $W/mask --bg-look moody       # человек и фон — разные стили (нужна маска из 1.6)
+python3 $FX/grade_look.py video $W/clean.mp4 $W/graded.mp4 --look clean --params '{"exposure":8,"shadows":10}'  # свои ползунки поверх стиля (по `wishes`: «светлее лицо», «теплее»…)
+```
+Параметры пишутся в `$W/graded_look/params.json`, LUT — `$W/graded_look/look.cube`. Дальше `$W/graded.mp4` — вместо `$W/clean.mp4` (эффекты 1.6 накладывай ПОСЛЕ цветокора, чтобы цвет фона эффекта не плыл). Скорость: ≈ реального времени; минута видео ≈ 0,5–1 мин. Это ЗАМЕНА самодельной цепочки цветокора: свой тяжёлый «кинотон» через сегментацию кадр за кадром больше не делай (он занимал десятки минут).
+Правила: кожа не должна уходить в оранжевый/серый (проверь 3 стоп-кадра с лицом до/после), белые не розовеют, чёрные не «шумят»; если не нравится — уменьши `--strength` или поправь ползунки, максимум 2 круга. `wishes` автора про цвет важнее стиля. В финальном статусе одной строкой: какой стиль и ползунки применены.
 
 ## 1.5. Примеры автора (refs)
 Если `refs` не пуст: скачай каждую картинку (`curl -sSL "<url>" -o $W/ref_<n>.<ext>`) и ПОСМОТРИ её инструментом Read. HEIC (снимки iPhone) сначала переведи в JPG: `pip install -q pillow-heif && python3 -c "from pillow_heif import register_heif_opener;register_heif_opener();from PIL import Image;Image.open('$W/ref_1.heic').convert('RGB').save('$W/ref_1.jpg')"`. Подпись `note` говорит, что взять:
@@ -137,3 +152,12 @@ cd templates/reels-split3d && python3 talkhead.py --edl $W/edl.json --video $W/s
 ## 7. Отправка
 `curl -sS -X PUT --data-binary @$W/final.mp4 -H 'Content-Type: application/octet-stream' "$resultUrl"` (повтор до 3 раз при ошибке).
 Финальный статус: `{"stage":"done","message":"<длительность, что сделано, 1–2 сомнительных места>"}`.
+
+## 7б. Пакет для доработки в CapCut (только если `wantPackage` true; после отправки mp4)
+```bash
+python3 $FX/capcut_pack.py --out $W/pack --name "<короткое название>" --final $W/final.mp4 --clean $W/graded.mp4|$W/clean.mp4 \
+  --source $W/src.mp4 --edl $W/edl.json --words $W/work_clean/subs/words.json --zoom $W/work_clean/zoom.json \
+  --cube $W/graded_look/look.cube --look-params $W/graded_look/params.json --overlay-frames $W/frames --zip $W/package.zip
+curl -sS -X PUT --data-binary @$W/package.zip -H 'Content-Type: application/zip' "$packageUrl"      # повтор до 3 раз
+```
+`--clean` — видео БЕЗ субтитров и анимации (после наездов, цветокора и эффектов, как оно шло в layer.py); `--overlay-frames` — папка PNG-кадров слоя анимации с прозрачностью (если анимации не было — не передавай). Нет цветокора — `--cube`/`--look-params` не передавай. Если capcut_draft не собрался — это допустимо (экспериментальная часть), напиши в финальном статусе. Пакет НЕ блокирует основной результат: сначала отправь mp4, потом пакет; сбой пакета не делает задание ошибкой.
