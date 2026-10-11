@@ -19,5 +19,7 @@ npx --yes puppeteer browsers install chrome 2>&1 | tail -1 || true
 if command -v apt-get >/dev/null && { [ "$(id -u)" = 0 ] || sudo -n true 2>/dev/null; }; then
   (sudo -n apt-get install -y -qq libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 libxrandr2 libgbm1 libasound2t64 libpango-1.0-0 libcairo2 2>/dev/null || apt-get install -y -qq libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 libxrandr2 libgbm1 libasound2 libpango-1.0-0 libcairo2 2>/dev/null) || true
 fi
-python3 -m pip install -q --user faster-whisper opencv-python-headless numpy pillow 2>&1 | tail -1 || pip install -q faster-whisper opencv-python-headless numpy pillow
+python3 -m pip install -q --user faster-whisper opencv-python-headless numpy pillow onnxruntime cairosvg 2>&1 | tail -1 || pip install -q faster-whisper opencv-python-headless numpy pillow onnxruntime cairosvg
+# модель вырезания человека (Robust Video Matting, 15 МБ) — для эффектов на человеке (fx/person_mask.py)
+mkdir -p ~/.cache/rvm && [ -s ~/.cache/rvm/rvm_mobilenetv3_fp32.onnx ] || curl -sL --retry 3 -o ~/.cache/rvm/rvm_mobilenetv3_fp32.onnx https://github.com/PeterL1n/RobustVideoMatting/releases/download/v1.0.0/rvm_mobilenetv3_fp32.onnx || true
 log "готово"

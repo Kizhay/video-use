@@ -1,12 +1,13 @@
 # MONTAGE.md — облачный монтаж Reels (инструкция для подпрограммы Claude Code)
 
 Ты — монтажёр вертикальных Reels. Тебя запустили по API. **Первая строка сообщения — JSON задания**:
-`{"jobId","sourceUrl","sourceBytes","statusUrl","resultUrl","style","title","wishes","refs","preset","clips","mergeMode","fonts"}`.
+`{"jobId","sourceUrl","sourceBytes","statusUrl","resultUrl","style","title","wishes","refs","preset","clips","mergeMode","fonts","effects"}`.
 `refs` — массив примеров `[{"url","note"}]` (может отсутствовать или быть пустым).
 `style` — движок: `main` | `split` | `inserts` (в старых заданиях может быть по-русски: основной | сплит | вставки). `title` и `wishes` — пожелания автора (могут быть пустыми).
 `preset` — оформление из каталога: `{id, engine, subsStyle, zoom, background, box}` (см. раздел 5, «Оформление и шрифты»). Если поля нет — оформление по `style` как раньше.
 `clips` — ВСЕ ролики автора по порядку: `[{pos, url, note, name}]`; первый совпадает с `sourceUrl`. `note` — что это за ролик (может быть пустым).
 `mergeMode` — `single` (один ролик) | `sequence` (по очереди) | `stack` (друг над другом) | `side` (рядом) | `describe` (по описанию автора).
+`effects` — какие эффекты на человеке выбрал автор: подмножество `bg_replace | outline | head_circle | text_behind | stickers | web_images` (может быть пустым; пустой список = эффектов не нужно, если автор не попросил их в `wishes`). Что делать — раздел 1.6.
 `fonts` — `{subs, title}`: `{"kind":"builtin","file","family","weight"}` (файл из `templates/reels-split3d/` — `assets/fonts/...`) или `{"kind":"custom","url","name","ext","weight"}` (свой шрифт автора по ссылке).
 Работай полностью автономно, вопросов не задавай. Ничего не коммить в репозиторий.
 
@@ -44,6 +45,31 @@ python3 templates/reels-split3d/merge_clips.py <режим> $W/src.mp4 $W/clip_1
 - `single` — просто скачай `sourceUrl` в `$W/src.mp4`, как раньше.
 - Первый ролик обязателен; если какой-то из `clips` не скачался (404) — собери из тех, что есть, и скажи об этом в финальном статусе.
 Статус этапа: `{"stage":"download","message":"Скачиваю ролики: N"}`, затем `{"stage":"edit","message":"Склеиваю ролики"}`.
+
+## 1.6. Эффекты на человеке и картинки из интернета (только если выбраны в `effects` или просят в `wishes`)
+Инструменты лежат в `templates/reels-split3d/fx/`. Зависимости ставит `cloud_setup.sh` (onnxruntime, cairosvg, модель RVM 15 МБ).
+**Порядок.** Маска считается по ТОМУ видео, на которое накладываем эффекты, то есть ПОСЛЕ наездов: сначала чистое видео (`talkhead.py --clean --hook-style 2|3` → `$W/clean.mp4`), потом:
+```bash
+FX=templates/reels-split3d/fx
+python3 $FX/person_mask.py $W/clean.mp4 $W/mask                       # ≈ 0,5 с на секунду видео (4 ядра): минута видео ≈ 30 с
+# картинки из интернета (по надобности):
+python3 $FX/fetch_assets.py icon  "shopping cart" $W/assets --color "#FFD60A"   # иконки (Iconify, 200 000 штук)
+python3 $FX/fetch_assets.py logo  "telegram" $W/assets                          # логотипы (simple-icons); нет в наборе — значок сайта:
+python3 $FX/fetch_assets.py logo  "ozon" $W/assets --domain ozon.ru             # Ozon, Wildberries и т.п.
+python3 $FX/fetch_assets.py photo "warehouse boxes" $W/assets --count 3 --orientation tall   # настоящие фото (Openverse; с ключами — Pexels/Unsplash/Pixabay)
+# спецификация эффектов (JSON, см. docstring fx/effects.py) и наложение:
+python3 $FX/effects.py $W/clean.mp4 $W/mask $W/spec.json $W/fx.mp4    # ≈ 8-10 кадров/с в 1080x1920; минута ≈ 3 мин
+```
+Дальше `$W/fx.mp4` используй ВМЕСТО `$W/clean.mp4`. Если выбран стиль `main` и есть эффекты — собирай как «вставки»: проект анимации с пустой сценой (`scenes/empty.js`, как делает talkhead внутри), субтитры и заголовок через project.json, `layer.py --video $W/fx.mp4 --layout full` (talkhead без `--clean` жжёт субтитры сам и эффекты бы оказались под ними).
+**Что умеет `effects.py`** (по маске человека, всё «приклеено» и двигается вместе с ним): `bg` (размытие / цвет / градиент / картинка / видео вместо фона), `text_behind` (крупные буквы МЕЖДУ фоном и человеком: человек их перекрывает), `outline` (светящийся контур по силуэту: solid | pulse | rainbow), `sticker_outline` (белая вырезная обводка как у стикера), `head_circle` (вырезанная голова в круге в углу), `sticker` (иконка/фото, прилипшая к голове или плечу: head_top | head_left | head_right | shoulder_l | shoulder_r | chest).
+**Соответствие выбору автора:** `bg_replace` → `bg`; `outline` → `outline` (+ `sticker_outline` по вкусу); `head_circle` → `head_circle`; `text_behind` → `text_behind` на ключевом слове (время бери из `words.json`); `stickers` → `sticker` с иконкой из `fetch_assets.py icon|logo`; `web_images` → фото/логотипы из интернета как `bg image`, `sticker` или полноэкранные вставки сцен.
+**Правила.**
+- Ритм: событие каждые 2–4 с (`BRIEF_rhythm.md`), одновременно не больше 2–3 эффектов; контур включай на ударных словах, а не весь ролик; смена фона — на смене мысли.
+- Не выдумывай факты картинками: логотипы и страницы — настоящие. **Скриншоты сайтов:** `node fx/shot.mjs URL OUT.png` работает, но Ozon (403) и Wildberries (498) блокируют облачный адрес — для них скриншоты только от автора (refs) или значок через `fetch_assets.py logo --domain`. Wikimedia из облака тоже отвечает 429 — не используй.
+- Лицензии: `fetch_assets.py photo` берёт только cc0 / pdm / by (и Pexels/Unsplash/Pixabay при ключах в окружении). Если в `assets.json` у выбранной картинки есть `attribution` — перепиши её в финальный статус, автор вставит в описание. Фото с узнаваемыми лицами посторонних людей в рекламу не ставь без просьбы автора, чужие логотипы не искажай.
+- Проверка: 6 стоп-кадров сам Read'ом. Дырки в маске (руки, волосы, быстрое движение) → убери этот эффект на проблемном куске (по `start`/`end`) или смени на не зависящий от края (`bg blur`, `sticker`); не отправляй брак. На общем плане с несколькими людьми голова/плечи берутся у самого крупного.
+- Модель обучена на людях; предметы (бутылка в руке, товар) могут частично пропадать из маски: если автор показывает товар, не включай `bg_replace`/`text_behind` на этих кадрах.
+Статус этапа: `{"stage":"edit","message":"Накладываю эффекты на человека"}`.
 
 ## 1.5. Примеры автора (refs)
 Если `refs` не пуст: скачай каждую картинку (`curl -sSL "<url>" -o $W/ref_<n>.<ext>`) и ПОСМОТРИ её инструментом Read. HEIC (снимки iPhone) сначала переведи в JPG: `pip install -q pillow-heif && python3 -c "from pillow_heif import register_heif_opener;register_heif_opener();from PIL import Image;Image.open('$W/ref_1.heic').convert('RGB').save('$W/ref_1.jpg')"`. Подпись `note` говорит, что взять:
