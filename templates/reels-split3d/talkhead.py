@@ -111,6 +111,7 @@ def main():
     ap.add_argument('--clean', action='store_true', help='только наезды, без субтитров и заголовка (слой для анимаций)')
     ap.add_argument('--reuse', action='store_true', help='не пересчитывать готовые куски и кадры субтитров')
     ap.add_argument('--hook', type=int, default=1, help='краш-зум в первые ~1.8 с')
+    ap.add_argument('--no-zoom', action='store_true', help='без наездов и краш-зума (стиль «Чистый», склейка stack/side)')
     a = ap.parse_args()
     E = json.load(open(a.edl))
     ta, tb, tc = (float(x) for x in a.start_tweak.split(','))
@@ -183,8 +184,8 @@ def main():
       run(['node', os.path.join(HERE, 'render.mjs'), '--project', sp, '--out', frames, '--workers', '4'])
 
     # 3. сборка: наезды + субтитры + громкость
-    sched = zoom_schedule(cuts[:-1], total)
-    if a.hook:
+    sched = [] if a.no_zoom else zoom_schedule(cuts[:-1], total)
+    if a.hook and not a.no_zoom:
         hb = hook_blocks(total, a.hook_style); hend = hb[-1][1]
         sched = hb + [(max(x[0], hend), x[1], x[2], x[3]) for x in sched if x[1] > hend]
     json.dump(sched, open(os.path.join(work, 'zoom.json'), 'w'))

@@ -1,9 +1,13 @@
 # MONTAGE.md — облачный монтаж Reels (инструкция для подпрограммы Claude Code)
 
 Ты — монтажёр вертикальных Reels. Тебя запустили по API. **Первая строка сообщения — JSON задания**:
-`{"jobId","sourceUrl","sourceBytes","statusUrl","resultUrl","style","title","wishes","refs"}`.
+`{"jobId","sourceUrl","sourceBytes","statusUrl","resultUrl","style","title","wishes","refs","preset","clips","mergeMode","fonts"}`.
 `refs` — массив примеров `[{"url","note"}]` (может отсутствовать или быть пустым).
-`style`: `основной` | `сплит` | `вставки`. `title` и `wishes` — пожелания автора (могут быть пустыми).
+`style` — движок: `main` | `split` | `inserts` (в старых заданиях может быть по-русски: основной | сплит | вставки). `title` и `wishes` — пожелания автора (могут быть пустыми).
+`preset` — оформление из каталога: `{id, engine, subsStyle, zoom, background, box}` (см. раздел 5, «Оформление и шрифты»). Если поля нет — оформление по `style` как раньше.
+`clips` — ВСЕ ролики автора по порядку: `[{pos, url, note, name}]`; первый совпадает с `sourceUrl`. `note` — что это за ролик (может быть пустым).
+`mergeMode` — `single` (один ролик) | `sequence` (по очереди) | `stack` (друг над другом) | `side` (рядом) | `describe` (по описанию автора).
+`fonts` — `{subs, title}`: `{"kind":"builtin","file","family","weight"}` (файл из `templates/reels-split3d/` — `assets/fonts/...`) или `{"kind":"custom","url","name","ext","weight"}` (свой шрифт автора по ссылке).
 Работай полностью автономно, вопросов не задавай. Ничего не коммить в репозиторий.
 
 ### Режим дежурства (если JSON задания в сообщении НЕТ)
@@ -25,6 +29,21 @@ cd templates/reels-split3d && bash cloud_setup.sh && cd ../..
 W=/tmp/job; mkdir -p $W && curl -sSL --retry 3 "$sourceUrl" -o $W/src.mp4   # исходник
 ```
 Если в облаке Chrome не стартует — добавь в args render.mjs `--no-sandbox --disable-dev-shm-usage` (локально, без коммита).
+
+## 1.4. Несколько роликов (clips) и склейка
+Если `clips` содержит больше одного ролика — исходник для всего дальнейшего собираешь ТЫ из них, и результат кладёшь в `$W/src.mp4` (дальше разделы 2–7 работают с ним, как с единственным исходником).
+```bash
+# скачать все ролики в порядке pos
+curl -sSL --retry 3 "<clips[i].url>" -o $W/clip_<pos>.<ext>
+# собрать (sequence | stack | side):
+python3 templates/reels-split3d/merge_clips.py <режим> $W/src.mp4 $W/clip_1.mp4 $W/clip_2.mov [...]
+```
+- `sequence` — один за другим в порядке pos. Расшифровка и EDL — по склеенному ролику; `clips[].note` подсказывает, о чём каждый кусок.
+- `stack` — друг над другом (2–3 ролика), `side` — рядом (2–3). Если роликов больше трёх: первые три в один кадр (`merge_clips.py stack|side`), остальные добавь после него через `merge_clips.py sequence`. Звук и длина — от ПЕРВОГО ролика. Для этих режимов основной монтаж делай с `--no-zoom` (наезды на склейку из нескольких картинок не нужны), ставь `--subs-y` так, чтобы субтитры не закрывали швы между роликами (для `stack` — на шов или в нижней трети, проверь кадром).
+- `describe` — прочитай `wishes` и `clips[].note`. Выбери способ сам: порядок как просили; «рядом/одновременно/сверху» — stack или side; «потом/после» — sequence. Смешанные случаи (например, два ролика вместе, потом третий) собирай по частям: `merge_clips.py` для каждой части, затем `merge_clips.py sequence`. Если описание неясное — делай `sequence` в порядке pos и напиши в финальном статусе, как понял.
+- `single` — просто скачай `sourceUrl` в `$W/src.mp4`, как раньше.
+- Первый ролик обязателен; если какой-то из `clips` не скачался (404) — собери из тех, что есть, и скажи об этом в финальном статусе.
+Статус этапа: `{"stage":"download","message":"Скачиваю ролики: N"}`, затем `{"stage":"edit","message":"Склеиваю ролики"}`.
 
 ## 1.5. Примеры автора (refs)
 Если `refs` не пуст: скачай каждую картинку (`curl -sSL "<url>" -o $W/ref_<n>.<ext>`) и ПОСМОТРИ её инструментом Read. HEIC (снимки iPhone) сначала переведи в JPG: `pip install -q pillow-heif && python3 -c "from pillow_heif import register_heif_opener;register_heif_opener();from PIL import Image;Image.open('$W/ref_1.heic').convert('RGB').save('$W/ref_1.jpg')"`. Подпись `note` говорит, что взять:
@@ -60,6 +79,13 @@ W=/tmp/job; mkdir -p $W && curl -sSL --retry 3 "$sourceUrl" -o $W/src.mp4   # и
 - звуковых эффектов НЕТ;
 - анимация (сплит/вставки) стартует сразу после заголовка (~3.4 с) и дальше событие каждые 2–4 с до конца (`briefs/BRIEF_rhythm.md`);
 - слова-удары вписываются в ширину ≤ 940 px (подбор font-size по измеренной ширине).
+
+### Оформление и шрифты (из `preset` и `fonts`)
+- `preset.subsStyle` → `--subs-style` в talkhead.py и `subs.style` в project.json (marker | hormozi | pill | clean | minimal). `preset.box` — подложка под субтитры (для `minimal` talkhead сам ставит подложку; для остальных не нужна). `preset.zoom == false` → `--no-zoom`.
+- `preset.background` (`light` | `dark` | `flat`) — фон верхней половины для движка `split`.
+- Шрифты: если `fonts.subs` / `fonts.title` заданы — они ГЛАВНЕЕ значений из этой инструкции (Jost для субтитров, Tektur/Unbounded/DelaGothicOne для заголовка). `builtin`: `--font templates/reels-split3d/<file> --family <family> --weight <weight>` (для заголовка `--title-font … --title-family … --title-weight …`). `custom`: скачай `url` в `$W/fonts/<name>.<ext>`, проверь, что в нём есть кириллица (`python3 -c "from fontTools.ttLib import TTFont;c=TTFont('<файл>').getBestCmap();print(all(ord(x) in c for x in 'абвгдеёжзийклмнопрстуфхцчшщъыьэюя'))"`); нет кириллицы или не открылся — возьми шрифт стиля по умолчанию и скажи об этом в финальном статусе. Свой шрифт копируй и в папку проекта анимации (сервер рендера отдаёт только её).
+- Размер подбирай по ширине: слова-удары ≤ 940 px, у тонких и узких шрифтов размер можно увеличить, у широких (Unbounded, Dela Gothic) уменьшить; проверь кадром.
+- `style` (движок) выбирает ветку ниже: `main` → «основной», `split` → «сплит», `inserts` → «вставки».
 
 ### основной
 ```bash
