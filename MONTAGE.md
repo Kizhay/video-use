@@ -30,7 +30,16 @@
 ```bash
 cd templates/reels-split3d && bash cloud_setup.sh && cd ../..
 W=/tmp/job; mkdir -p $W && curl -sSL --retry 3 "$sourceUrl" -o $W/src.mp4   # исходник
+# 4K и всё, что больше 1080×1920, сразу уменьшаем: готовый ролик всё равно 1080×1920, а сборка
+# 4K в облаке без видеокарты шла 22 минуты одна (прецедент 12.10.2026). Оригинал — src_orig.mp4.
+IFS=, read SW SH <<< "$(ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=p=0 $W/src.mp4)"
+if [ $(( SW > SH ? SW : SH )) -gt 1920 ]; then
+  mv $W/src.mp4 $W/src_orig.mp4
+  ffmpeg -v error -y -i $W/src_orig.mp4 -vf "scale='if(gt(iw,ih),1920,-2)':'if(gt(iw,ih),-2,1920)':flags=lanczos" \
+    -c:v libx264 -crf 16 -preset veryfast -pix_fmt yuv420p -c:a copy -movflags +faststart $W/src.mp4
+fi
 ```
+Дальше везде работай с `$W/src.mp4` (уже уменьшенным); `src_orig.mp4` не трогай.
 Если в облаке Chrome не стартует — добавь в args render.mjs `--no-sandbox --disable-dev-shm-usage` (локально, без коммита).
 
 ## 1.4. Несколько роликов (clips) и склейка
